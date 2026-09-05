@@ -769,9 +769,12 @@ local methods = {
 		    row:Hide()
 	    end
         local rowIndex = 1 - FauxScrollFrame_GetOffset(self.scrollFrame)
+        local rowLimit = getn(self.rows)
         for _, v in ipairs(self.rowInfo) do
+            if rowIndex > rowLimit then break end
             if self.expanded[v.expandKey] then
                 for j, childInfo in ipairs(v.children) do
+                    if rowIndex > rowLimit then break end
                     self:SetRowInfo(rowIndex, childInfo.record, childInfo.count, 0, j > 1, false, v.expandKey)
                     rowIndex = rowIndex + 1
                 end
@@ -896,16 +899,13 @@ local methods = {
 
     GetSelection = function(self)
         if not self.selected then return end
-        local selectedData
         for _, v in ipairs(self.rowInfo) do
             for _, childInfo in v.children do
                 if childInfo.record.search_signature == self.selected.search_signature then
-                    selectedData = childInfo
-                    break
+                    return childInfo
                 end
             end
         end
-        return selectedData
     end,
 }
 
