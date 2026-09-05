@@ -13,7 +13,11 @@ function aux.handle.INIT_UI()
 
     frame = CreateFrame('Frame', nil, aux.frame)
     frame:SetAllPoints()
-    frame:SetScript('OnUpdate', on_update)
+    frame:SetScript('OnUpdate', function()
+        if refresh then
+            on_update()
+        end
+    end)
     frame:Hide()
 
     frame.content = CreateFrame('Frame', nil, frame)
