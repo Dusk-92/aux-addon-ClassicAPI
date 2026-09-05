@@ -210,11 +210,16 @@ function M.set_shopping_tooltip(slot)
 end
 
 function M.tooltip_match(entry, tooltip)
-    return aux.any(tooltip, function(line)
-        local left_match = line.left_text and strupper(line.left_text) == strupper(entry)
-        local right_match = line.right_text and strupper(line.right_text) == strupper(entry)
-        return left_match or right_match
-    end)
+    local upper_entry = strupper(entry)
+    for _, line in tooltip do
+        if line.left_text and strupper(line.left_text) == upper_entry then
+            return true
+        end
+        if line.right_text and strupper(line.right_text) == upper_entry then
+            return true
+        end
+    end
+    return false
 end
 
 function M.tooltip_find(pattern, tooltip)
@@ -264,7 +269,10 @@ end
 
 function M.auctionable(tooltip, quality, strict)
     local status = tooltip[2] and tooltip[2].left_text
-    local durability, max_durability = durability(tooltip)
+    local durability, max_durability
+    if strict then
+        durability, max_durability = durability(tooltip)
+    end
     return (not quality or quality < 6)
             and status ~= ITEM_BIND_ON_PICKUP
             and status ~= ITEM_BIND_QUEST
@@ -287,12 +295,18 @@ function M.tooltip(setter, arg1, arg2)
     end
     local tooltip = T.acquire()
     for i = 1, AuxTooltip:NumLines() do
-        tinsert(tooltip, T.map(
-            'left_text', _G['AuxTooltipTextLeft' .. i]:GetText(),
-            'left_color', T.list(_G['AuxTooltipTextLeft' .. i]:GetTextColor()),
-            'right_text', _G['AuxTooltipTextRight' .. i]:IsVisible() and _G['AuxTooltipTextRight' .. i]:GetText(),
-            'right_color', T.list(_G['AuxTooltipTextRight' .. i]:GetTextColor())
-        ))
+        local left_line = _G['AuxTooltipTextLeft' .. i]
+        local right_line = _G['AuxTooltipTextRight' .. i]
+        local right_text = right_line:IsVisible() and right_line:GetText()
+        local line = T.map(
+            'left_text', left_line:GetText(),
+            'left_color', T.list(left_line:GetTextColor()),
+            'right_text', right_text
+        )
+        if right_text then
+            line.right_color = T.list(right_line:GetTextColor())
+        end
+        tinsert(tooltip, line)
     end
     return tooltip, AuxTooltip.money
 end
