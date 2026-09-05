@@ -60,8 +60,9 @@ function post_auction(slot, k)
 				start_price = buyout_price
 			end
 			
-			if history.market_value(state.item_key) ~= nil then 
-					local tmp = tonumber(history.market_value(state.item_key))
+			local market_value = tonumber(history.market_value(state.item_key))
+			if market_value ~= nil then 
+					local tmp = market_value
 					--tmp = max(0.99*tmp,tmp-50)
 					--buyout_price = max(buyout_price,tmp)
 					tmp = max(1,tmp-1)
@@ -69,16 +70,17 @@ function post_auction(slot, k)
 					kz_daily = 1
 			end	
 			
-			if history.value(state.item_key) ~= nil then 
+			local historical_value = tonumber(history.value(state.item_key))
+			if historical_value ~= nil then 
 				if kz_pricing == 1 and kz_daily == 1 then
-					--buyout_price = max(buyout_price,0.99*tonumber(history.value(state.item_key)))
-					buyout_price = max(buyout_price,0.50*tonumber(history.value(state.item_key)))
+					--buyout_price = max(buyout_price,0.99*historical_value)
+					buyout_price = max(buyout_price,0.50*historical_value)
 				elseif kz_daily == 1 then
-					--start_price = max(start_price,0.91*tonumber(history.value(state.item_key
-					start_price = max(start_price,0.80*tonumber(history.value(state.item_key)))
+					--start_price = max(start_price,0.91*historical_value)
+					start_price = max(start_price,0.80*historical_value)
 				else
-					--buyout_price = max(buyout_price,0.99* tonumber(history.value(state.item_key)))
-					buyout_price = max(buyout_price,0.95* tonumber(history.value(state.item_key)))
+					--buyout_price = max(buyout_price,0.99*historical_value)
+					buyout_price = max(buyout_price,0.95*historical_value)
 				end
 			else
 				kz_warn = kz_warn + 1
@@ -94,8 +96,9 @@ function post_auction(slot, k)
 					vendor_price = tonumber(aux.account_data.merchant_sell[item_info.item_id])
 				elseif ShaguTweaks and ShaguTweaks.SellValueDB[item_info.item_id] ~= nil then
 					local charges = 1
-					if info.max_item_charges(item_info.item_id) ~= nil then 
-						charges=info.max_item_charges(item_info.item_id) 
+					local max_charges = info.max_item_charges(item_info.item_id)
+					if max_charges ~= nil then 
+						charges = max_charges
 					end
 					vendor_price = ShaguTweaks.SellValueDB[item_info.item_id] / charges
 				end
@@ -110,23 +113,24 @@ function post_auction(slot, k)
 				end
 			end
 			
-			if disenchant.value(item_info.slot, item_info.quality, item_info.level, item_info.item_id) ~= nil then 
-				start_price = max(start_price,0.85* tonumber(disenchant.value(item_info.slot, item_info.quality, item_info.level, item_info.item_id)))
+			local disenchant_value = tonumber(disenchant.value(item_info.slot, item_info.quality, item_info.level, item_info.item_id))
+			if disenchant_value ~= nil then 
+				start_price = max(start_price,0.85*disenchant_value)
 			end
 			
 			start_price = max(start_price,0.91 * buyout_price)
 			buyout_price = max(start_price, buyout_price)
 			
-			if disenchant.value(item_info.slot, item_info.quality, item_info.level, item_info.item_id) ~= nil then 
-				if buyout_price < 0.95 * tonumber(disenchant.value(item_info.slot, item_info.quality, item_info.level, item_info.item_id)) -30 then
+			if disenchant_value ~= nil then 
+				if buyout_price < 0.95 * disenchant_value -30 then
 					aux.print("autopricing recommends disenchanting!")
 					return stop()
 				end
 			end
 			
 			if kz_daily == 1 and vendor_price > 0 then 
-				if tonumber(history.value(state.item_key)) < 1.35 * vendor_price 
-				or tonumber(history.market_value(state.item_key)) < 1.35 * vendor_price then
+				if historical_value < 1.35 * vendor_price 
+				or market_value < 1.35 * vendor_price then
 					aux.print("autopricing recommends vendoring!")
 					return stop()
 				end
