@@ -21,6 +21,8 @@ local persistence = require 'aux.util.persistence'
 local history_schema = {'tuple', '#', {next_push='number'}, {daily_min_buyout='number'}, {data_points={'list', ';', {'tuple', '@', {value='number'}, {time='number'}}}}}
 
 local value_cache = {}
+local daily_min_cache = {}
+local daily_min_cache_until = 0
 
 function aux.handle.LOAD2()
 	data = aux.faction_data.history
@@ -41,6 +43,13 @@ function aux.handle.LOAD2()
 	end
 end
 
+function aux.handle.CLOSE()
+	for item_key in daily_min_cache do
+		daily_min_cache[item_key] = nil
+	end
+	daily_min_cache_until = 0
+end
+
 do
 	local next_push = 0
 	function get_next_push()
@@ -50,6 +59,15 @@ do
 			next_push = time(date)
 		end
 		return next_push
+	end
+end
+
+function refresh_daily_min_cache(now)
+	if now >= daily_min_cache_until then
+		for item_key in daily_min_cache do
+			daily_min_cache[item_key] = nil
+		end
+		daily_min_cache_until = get_next_push()
 	end
 end
 
@@ -68,6 +86,7 @@ end
 
 function write_record(item_key, record)
 	data[item_key] = persistence.write(history_schema, record)
+	daily_min_cache[item_key] = record.daily_min_buyout or false
 	if value_cache[item_key] then
 		T.release(value_cache[item_key])
 		value_cache[item_key] = nil
@@ -97,12 +116,25 @@ data_sharer:SetScript("OnEvent", function()
 end)
 
 function M.process_auction(auction_record, pages)
-	local item_record = read_record(auction_record.item_key)
-	local unit_buyout_price = ceil(auction_record.buyout_price / auction_record.aux_quantity)
+	if auction_record.buyout_price <= 0 then return end
+
 	local item_key = auction_record.item_key
-	if unit_buyout_price > 0 and unit_buyout_price < (item_record.daily_min_buyout or aux.huge) then
+	local unit_buyout_price = ceil(auction_record.buyout_price / auction_record.aux_quantity)
+	local now = time()
+	refresh_daily_min_cache(now)
+
+	local cached_min = daily_min_cache[item_key]
+	if cached_min and unit_buyout_price >= cached_min then
+		return
+	end
+
+	local item_record = read_record(item_key)
+	local daily_min_buyout = item_record.daily_min_buyout
+	daily_min_cache[item_key] = daily_min_buyout or false
+
+	if unit_buyout_price < (daily_min_buyout or aux.huge) then
 		item_record.daily_min_buyout = unit_buyout_price
-		write_record(auction_record.item_key, item_record)
+		write_record(item_key, item_record)
 		--AuxAddon:SendCommMessage("GUILD", item_key, unit_buyout_price) relies on acecomm
 		if aux.account_data.sharing == true then
 			if (tonumber(pages) or 0) < 15 then --to avoid sharing data when people do searches without a keyword "full scans"
@@ -130,20 +162,20 @@ function M.data_points(item_key)
 end
 
 function M.value(item_key)
-	if not value_cache[item_key] or value_cache[item_key].next_push <= time() then
+	local now = time()
+	if not value_cache[item_key] or value_cache[item_key].next_push <= now then
 		local item_record, value
 		item_record = read_record(item_key)
 		if getn(item_record.data_points) > 0 then
 			local total_weight, weighted_values = 0, T.temp-T.acquire()
+			local newest_time = item_record.data_points[1].time
 			for _, data_point in item_record.data_points do
-				local weight = .99 ^ aux.round((item_record.data_points[1].time - data_point.time) / (60 * 60 * 24))
+				local weight = .99 ^ aux.round((newest_time - data_point.time) / (60 * 60 * 24))
 				total_weight = total_weight + weight
-				tinsert(weighted_values, T.map('value', data_point.value, 'weight', weight))
+				data_point.weight = weight
+				tinsert(weighted_values, data_point)
 			end
-			for _, weighted_value in weighted_values do
-				weighted_value.weight = weighted_value.weight / total_weight
-			end
-			value = weighted_median(weighted_values)
+			value = weighted_median(weighted_values, total_weight * .5)
 		else
 			value = item_record.daily_min_buyout
 		end
@@ -156,12 +188,12 @@ function M.market_value(item_key)
 	return read_record(item_key).daily_min_buyout
 end
 
-function weighted_median(list)
+function weighted_median(list, target_weight)
 	sort(list, function(a,b) return a.value < b.value end)
 	local weight = 0
 	for _, v in ipairs(list) do
 		weight = weight + v.weight
-		if weight >= .5 then
+		if weight >= target_weight then
 			return v.value
 		end
 	end
