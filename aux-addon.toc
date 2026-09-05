@@ -2,6 +2,7 @@
 ## Author: shirsig
 ## OptionalDeps: ShaguTweaks
 ## Title: aux
+## Version: 1.0.0
 ## Notes: Auction House replacement
 ## SavedVariables: aux
 
