@@ -57,6 +57,7 @@ do
     local IDLE, SEARCHING, FOUND = aux.enum(3)
     local state = IDLE
     local found_index
+    local update_elapsed = 0
 
     function find_auction(record)
         if not listing:ContainsRecord(record) then return end
@@ -104,6 +105,10 @@ do
     end
 
     function on_update()
+        update_elapsed = update_elapsed + (arg1 or 0)
+        if update_elapsed < .1 then return end
+        update_elapsed = 0
+
         if state == IDLE or state == SEARCHING then
             buyout_button:Disable()
             bid_button:Disable()
