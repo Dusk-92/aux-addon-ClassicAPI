@@ -5,6 +5,8 @@ local T = require 'T'
 local event_frame = CreateFrame('Frame', 'AuxThreadingFrame')
 
 local listeners, threads = T.acquire(), T.acquire()
+local listener_counts = T.acquire()
+local listeners_dirty
 
 local thread_id
 function M.thread_id() return thread_id end
@@ -13,34 +15,32 @@ function handle.LOAD()
 	event_frame:SetScript('OnEvent', EVENT)
 end
 
-function EVENT()
+local function cleanup_listeners()
+	if not listeners_dirty then return end
 	for id, listener in listeners do
 		if listener.killed then
 			listeners[id] = nil
-		elseif event == listener.event then
+		end
+	end
+	listeners_dirty = nil
+end
+
+function EVENT()
+	for _, listener in listeners do
+		if not listener.killed and event == listener.event then
 			listener.cb(listener.kill)
 		end
 	end
+	cleanup_listeners()
 end
 
 do
 	function UPDATE()
-		for _, listener in listeners do
-			local event, needed = listener.event, false
-			for _, listener in listeners do
-				needed = needed or listener.event == event and not listener.killed
-			end
-			if not needed then
-				event_frame:UnregisterEvent(event)
-			end
-		end
-
+		cleanup_listeners()
 		for id, thread in threads do
 			if thread.killed or not thread.k then
 				threads[id] = nil
-				local hasLiveThread = false
-				for _ in pairs(threads) do hasLiveThread = true break end
-				if not hasLiveThread then -- Disable threading task so it doesn't consume resources doing nothing
+				if not next(threads) then -- Disable threading task so it doesn't consume resources doing nothing
 					event_frame:SetScript('OnUpdate', nil)
 				end
 			else
@@ -64,8 +64,16 @@ end
 
 function M.kill_listener(listener_id)
 	local listener = listeners[listener_id]
-	if listener then
+	if listener and not listener.killed then
 		listener.killed = true
+		listeners_dirty = true
+
+		local listener_event = listener.event
+		listener_counts[listener_event] = (listener_counts[listener_event] or 1) - 1
+		if listener_counts[listener_event] <= 0 then
+			listener_counts[listener_event] = nil
+			event_frame:UnregisterEvent(listener_event)
+		end
 	end
 end
 
@@ -83,7 +91,12 @@ function M.event_listener(event, cb)
 		'cb', cb,
 		'kill', T.vararg-function(arg) if getn(arg) == 0 or arg[1] then kill_listener(listener_id) end end
 	)
-	event_frame:RegisterEvent(event)
+	if not listener_counts[event] then
+		event_frame:RegisterEvent(event)
+		listener_counts[event] = 1
+	else
+		listener_counts[event] = listener_counts[event] + 1
+	end
 	return listener_id
 end
 
