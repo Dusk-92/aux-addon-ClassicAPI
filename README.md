@@ -109,7 +109,7 @@ Messages use the format:
 AuxData,<item_key>,<unit_buyout_price>
 ```
 
-Only a lower daily minimum is stored. Very large / full scans are intentionally not broadcast to reduce channel traffic.
+Only a lower daily minimum is stored. Searches of **15 pages or more are not broadcast** to reduce LFT channel traffic.
 
 ## 🎨 Themes
 
