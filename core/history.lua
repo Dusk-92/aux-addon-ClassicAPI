@@ -98,17 +98,31 @@ data_sharer:RegisterEvent("CHAT_MSG_CHANNEL")
 
 data_sharer:SetScript("OnEvent", function()
 	if not aux.account_data.sharing then return end
+	if strupper(arg9 or "") ~= "LFT" then return end
+
+	local message = arg1 or ""
+	if strsub(message, 1, 8) ~= "AuxData," then return end
 	if arg2 == UnitName("player") then return end
-	if strupper(arg9) ~= "LFT" then return end
 
-	local _, _, item_key, munit_buyout_price = strfind(arg1 or "", "^AuxData,(.*),(.*)$") -- using , as a seperator because item_key contains a :
-
+	local _, _, item_key, munit_buyout_price = strfind(message, "^AuxData,([^,]+),([^,]+)$") -- using , as a separator because item_key contains a :
 	if not item_key then return end
 
 	local unit_buyout_price = tonumber(munit_buyout_price) or 0
-	local item_record = read_record(item_key)
+	if unit_buyout_price <= 0 then return end
 
-	if unit_buyout_price > 0 and unit_buyout_price < (item_record.daily_min_buyout or aux.huge) then
+	local now = time()
+	refresh_daily_min_cache(now)
+
+	local cached_min = daily_min_cache[item_key]
+	if cached_min and unit_buyout_price >= cached_min then
+		return
+	end
+
+	local item_record = read_record(item_key)
+	local daily_min_buyout = item_record.daily_min_buyout
+	daily_min_cache[item_key] = daily_min_buyout or false
+
+	if unit_buyout_price < (daily_min_buyout or aux.huge) then
 		item_record.daily_min_buyout = unit_buyout_price
 		write_record(item_key, item_record)
 	end
@@ -136,10 +150,11 @@ function M.process_auction(auction_record, pages)
 		item_record.daily_min_buyout = unit_buyout_price
 		write_record(item_key, item_record)
 		--AuxAddon:SendCommMessage("GUILD", item_key, unit_buyout_price) relies on acecomm
-		if aux.account_data.sharing == true then
+		if aux.account_data.sharing then
 			if (tonumber(pages) or 0) < 15 then --to avoid sharing data when people do searches without a keyword "full scans"
-				if GetChannelName("LFT") ~= 0 then
-					ChatThrottleLib:SendChatMessage("BULK", nil, "AuxData," .. item_key .."," .. unit_buyout_price , "CHANNEL", nil, GetChannelName("LFT")) --ChatThrottleLib fixed for turtle by Candor https://github.com/trumpetx/ChatLootBidder/blob/master/ChatThrottleLib.lua
+				local channel_id = GetChannelName("LFT")
+				if channel_id and channel_id ~= 0 then
+					ChatThrottleLib:SendChatMessage("BULK", nil, "AuxData," .. item_key .."," .. unit_buyout_price , "CHANNEL", nil, channel_id) --ChatThrottleLib fixed for turtle by Candor https://github.com/trumpetx/ChatLootBidder/blob/master/ChatThrottleLib.lua
 				  	--print("sent")
 				end
 		 	end
