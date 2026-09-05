@@ -15,14 +15,16 @@ Focused on **stability, compatibility and lower runtime overhead** while keeping
 ## 📦 Installation
 
 1. Download or clone the repository.
-2. Rename the folder to `aux-AddOn` if needed.
+2. Rename the addon folder to **`aux-addon`**.
 3. Copy it to:
 
 ```text
-World of Warcraft\Interface\AddOns\aux-AddOn
+World of Warcraft\Interface\AddOns\aux-addon
 ```
 
 4. Restart the game.
+
+> The folder name must be `aux-addon` so it matches `aux-addon.toc`.
 
 ## ✨ Main changes
 
@@ -42,7 +44,7 @@ This fork keeps aux's original behaviour and focuses on targeted low-risk improv
 - LFT price-sharing handler rejects unrelated traffic earlier and reuses cached daily minimums.
 - Disenchant tooltip calculations are skipped when both disenchant tooltip options are disabled.
 
-The Auction House request throttle and embedded **ChatThrottleLib** are intentionally left unchanged where server-side limits or compatibility make modification unsafe.
+aux keeps the native Auction House query flow and waits for `CanSendAuctionQuery()` before requesting the next page. Optional client-side tools such as **[AuctionQueryThrottle](https://github.com/brues-code/AuctionQueryThrottle)** can reduce the vanilla 5-second client-side query delay on compatible servers. **Server-side rate limits still apply.** Embedded **ChatThrottleLib** remains unchanged for safe LFT price sharing.
 
 ## 🏛️ Auction House Features
 
@@ -189,12 +191,13 @@ The built-in **Filter Builder** can be used as a visual tutorial for more advanc
 - Turtle WoW-style Auction House behaviour
 - Turtle WoW custom-item cache / autocompletion support
 - Optional ShaguTweaks vendor-value fallback
+- Optional AuctionQueryThrottle support for faster client-side paging on compatible servers
 - Existing aux SavedVariables format preserved
 - Existing LFT `AuxData` message format preserved
 
 ## ⚠️ Notes
 
-- Auction House page-request speed is limited by the server. aux cannot safely bypass that limit.
+- aux follows the normal `CanSendAuctionQuery()` flow. AuctionQueryThrottle can remove the vanilla client-side 5-second floor on compatible servers, but **server-side throttles still apply**.
 - `Today` is the **lowest price seen today**, not simply the most recently scanned listing.
 - Turtle WoW deposit costs can differ from the locally displayed estimate.
 - ChatThrottleLib is kept intact for safe chat-rate handling.
