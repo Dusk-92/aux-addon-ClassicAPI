@@ -6,19 +6,21 @@ local persistence = require 'aux.util.persistence'
 
 local MIN_ITEM_ID = 1
 local MAX_ITEM_ID = 99999
+local WDB_SCAN_ID_BUDGET = 500
 
 local items_schema = {'tuple', '#', {name='string'}, {quality='number'}, {level='number'}, {class='string'}, {subclass='string'}, {slot='string'}, {max_stack='number'}, {texture='string'}}
 local merchant_buy_schema = {'tuple', '#', {unit_price='number'}, {limited='boolean'}}
 
+local merchant_update_frame
+
 function aux.handle.LOAD()
 	scan_wdb()
+	merchant_update_frame = CreateFrame('Frame', nil, MerchantFrame)
 
 	aux.event_listener('MERCHANT_SHOW', on_merchant_show)
 	aux.event_listener('MERCHANT_CLOSED', on_merchant_closed)
 	aux.event_listener('MERCHANT_UPDATE', on_merchant_update)
 	aux.event_listener('BAG_UPDATE', on_bag_update)
-
-	CreateFrame('Frame', nil, MerchantFrame):SetScript('OnUpdate', merchant_on_update)
 
 	aux.event_listener('NEW_AUCTION_UPDATE', function()
 		local data = auction_sell_item()
@@ -56,6 +58,7 @@ do
 	function on_merchant_closed()
 		sell_scan_queued = nil
 		incomplete_buy_data = false
+		merchant_update_frame:SetScript('OnUpdate', nil)
 	end
 	function on_merchant_update()
 		if incomplete_buy_data then
@@ -65,6 +68,9 @@ do
 	function on_bag_update()
 		if MerchantFrame:IsVisible() then
 			sell_scan_queued = true
+			if not merchant_update_frame:GetScript('OnUpdate') then
+				merchant_update_frame:SetScript('OnUpdate', merchant_on_update)
+			end
 		end
 	end
 	function merchant_on_update()
@@ -72,6 +78,7 @@ do
 			sell_scan_queued = nil
 			merchant_sell_scan()
 		end
+		merchant_update_frame:SetScript('OnUpdate', nil)
 	end
 end
 
@@ -165,33 +172,43 @@ end
 function scan_wdb(item_id)
 	item_id = item_id or MIN_ITEM_ID
 
-	local processed = 0
-	while processed <= 100 and item_id <= MAX_ITEM_ID do
+	local processed, scanned = 0, 0
+	while processed <= 100 and scanned < WDB_SCAN_ID_BUDGET and item_id <= MAX_ITEM_ID do
 		local itemstring = 'item:' .. item_id
 		local name, _, quality, level, class, subclass, max_stack, slot, texture = GetItemInfo(itemstring)
-		if name and not aux.account_data.item_ids[strlower(name)] then
-            aux.account_data.item_ids[strlower(name)] = item_id
-			aux.account_data.items[item_id] = persistence.write(items_schema, T.temp-T.map(
-				'name', name,
-				'quality', quality,
-				'level', level,
-				'class', class,
-				'subclass', subclass,
-				'slot', slot,
-				'max_stack', max_stack,
-				'texture', texture
-			))
-			local tooltip = tooltip('link', itemstring)
-			if auctionable(tooltip, quality) then
-				tinsert(aux.account_data.auctionable_items, strlower(name))
+		if name then
+			local lower_name = strlower(name)
+			if not aux.account_data.item_ids[lower_name] then
+				aux.account_data.item_ids[lower_name] = item_id
+				aux.account_data.items[item_id] = persistence.write(items_schema, T.temp-T.map(
+					'name', name,
+					'quality', quality,
+					'level', level,
+					'class', class,
+					'subclass', subclass,
+					'slot', slot,
+					'max_stack', max_stack,
+					'texture', texture
+				))
+				local tooltip = tooltip('link', itemstring)
+				if auctionable(tooltip, quality) then
+					tinsert(aux.account_data.auctionable_items, lower_name)
+				end
+				processed = processed + 1
 			end
-			processed = processed + 1
 		end
+		scanned = scanned + 1
 		item_id = item_id + 1
 	end
 
 	if item_id <= MAX_ITEM_ID then
-		aux.thread(aux.when, aux.later(.5), scan_wdb, item_id)
+		if processed > 100 then
+			-- Preserve the original half-second pause when many new cached items are discovered.
+			aux.thread(aux.when, aux.later(.5), scan_wdb, item_id)
+		else
+			-- Yield at least one frame when the ID budget is reached, avoiding a single 1..99999 burst.
+			aux.thread(aux.when, aux.later(0), scan_wdb, item_id)
+		end
 	else
 		sort(aux.account_data.auctionable_items, function(a, b) return strlen(a) < strlen(b) or (strlen(a) == strlen(b) and a < b) end)
 	end
