@@ -1,0 +1,38 @@
+name: Finalize v1.0.0 cleanup
+
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: ${{ github.event.head_commit.message == 'finalize v1.0.0 cleanup' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Remove this temporary workflow and push final commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/finalize-v1.yml
+          git commit -m "Remove temporary finalization workflow"
+          git push origin HEAD:master
+
+      - name: Point v1.0.0 release at final master commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          FINAL_SHA=$(git rev-parse HEAD)
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/v1.0.0" -f sha="$FINAL_SHA" -F force=true >/dev/null
+          RELEASE_ID=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v1.0.0" --jq '.id')
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" -f target_commitish="$FINAL_SHA" -F make_latest=true >/dev/null
