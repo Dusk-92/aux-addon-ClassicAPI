@@ -2,6 +2,24 @@
 
 All notable changes to this fork are documented here.
 
+## [1.0.1] - 2026-09-06
+
+Tooltip readability update preserving the existing aux pricing model and Auction House workflow.
+
+### Tooltips
+
+- Replaced colored decimal-style AUX money strings with Blizzard gold, silver and copper coin icons.
+- Money values now use white tooltip text and right-aligned Auctionator-style positioning.
+- Renamed the visible `Value:` tooltip label to `Auction:` while keeping the existing internal `settings.value` and historical pricing logic unchanged.
+- Added dynamic tooltip width handling for large prices and reset the minimum width when the tooltip closes.
+- Preserved integer copper display for fractional internal disenchant expectations.
+
+### Compatibility & validation
+
+- No changes to SavedVariables, price history, LFT `AuxData` sharing, Auction House throttling or posting behaviour.
+- No new `OnUpdate` handler or permanent polling was introduced.
+- Validated in-game on WoW 1.12.1 / Turtle WoW, including different price sizes and native tooltip money display.
+
 ## [1.0.0] - 2026-09-05
 
 First formal release of the performance-focused `aux-addon-ClassicAPI` fork for World of Warcraft 1.12.1 / Turtle WoW.
