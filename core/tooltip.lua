@@ -3,12 +3,180 @@ module 'aux.core.tooltip'
 local T = require 'T'
 local aux = require 'aux'
 local info = require 'aux.util.info'
-local money =  require 'aux.util.money'
 local disenchant = require 'aux.core.disenchant'
 local history = require 'aux.core.history'
 local gui = require 'aux.gui'
 
 local UNKNOWN = GRAY_FONT_COLOR_CODE .. '?' .. FONT_COLOR_CODE_CLOSE
+
+local MONEY_TEXTURE = 'Interface\\MoneyFrame\\UI-MoneyIcons'
+local MONEY_ICON_SIZE = 11
+local MONEY_ICON_GAP = 1
+local MONEY_PART_GAP = 4
+local MONEY_SUFFIX_GAP = 6
+
+local tooltip_money_states = {}
+
+local function hide_money_rows(tooltip, reset_width)
+    local state = tooltip_money_states[tooltip]
+    if not state then return end
+    for _, row in state.rows do
+        row:Hide()
+    end
+    state.used = 0
+    if reset_width and state.min_width > 0 then
+        tooltip:SetMinimumWidth(0)
+    end
+    state.min_width = 0
+end
+
+local function money_state(tooltip)
+    local state = tooltip_money_states[tooltip]
+    if state then return state end
+
+    state = {rows = {}, used = 0, min_width = 0}
+    tooltip_money_states[tooltip] = state
+
+    local on_hide = tooltip:GetScript('OnHide')
+    tooltip:SetScript('OnHide', function()
+        hide_money_rows(tooltip, true)
+        if on_hide then on_hide() end
+    end)
+
+    return state
+end
+
+local function create_money_row(tooltip, index)
+    local name = tooltip:GetName() .. 'AuxMoneyRow' .. index
+    local row = CreateFrame('Frame', name, tooltip)
+    row:SetHeight(MONEY_ICON_SIZE)
+    row:Hide()
+    row.texts, row.icons = {}, {}
+
+    for i = 1, 3 do
+        local text = row:CreateFontString(name .. 'Text' .. i, 'OVERLAY', 'GameTooltipText')
+        text:SetTextColor(1, 1, 1)
+        row.texts[i] = text
+
+        local icon = row:CreateTexture(name .. 'Icon' .. i, 'ARTWORK')
+        icon:SetTexture(MONEY_TEXTURE)
+        icon:SetWidth(MONEY_ICON_SIZE)
+        icon:SetHeight(MONEY_ICON_SIZE)
+        row.icons[i] = icon
+    end
+
+    row.suffix = row:CreateFontString(name .. 'Suffix', 'OVERLAY', 'GameTooltipText')
+    row.suffix:SetTextColor(1, 1, 1)
+
+    return row
+end
+
+local function acquire_money_row(tooltip)
+    local state = money_state(tooltip)
+    state.used = state.used + 1
+
+    local row = state.rows[state.used]
+    if not row then
+        row = create_money_row(tooltip, state.used)
+        state.rows[state.used] = row
+    end
+
+    return row
+end
+
+local function set_coin_icon(icon, coin)
+    if coin == 'gold' then
+        icon:SetTexCoord(0, .25, 0, 1)
+    elseif coin == 'silver' then
+        icon:SetTexCoord(.25, .5, 0, 1)
+    else
+        icon:SetTexCoord(.5, .75, 0, 1)
+    end
+end
+
+local function set_money_part(row, index, coin, value, x)
+    local text, icon = row.texts[index], row.icons[index]
+    text:SetText(value)
+    text:ClearAllPoints()
+    text:SetPoint('LEFT', row, 'LEFT', x, 0)
+    text:Show()
+
+    set_coin_icon(icon, coin)
+    icon:ClearAllPoints()
+    icon:SetPoint('LEFT', text, 'RIGHT', MONEY_ICON_GAP, 0)
+    icon:Show()
+
+    return x + text:GetStringWidth() + MONEY_ICON_GAP + MONEY_ICON_SIZE + MONEY_PART_GAP
+end
+
+local function layout_money_row(row, value, suffix)
+    local gold = floor(value / 10000)
+    local silver = floor(mod(value, 10000) / 100)
+    local copper = mod(value, 100)
+
+    for i = 1, 3 do
+        row.texts[i]:Hide()
+        row.icons[i]:Hide()
+    end
+    row.suffix:Hide()
+
+    local x, index = 0, 0
+    if gold > 0 then
+        index = index + 1
+        x = set_money_part(row, index, 'gold', tostring(gold), x)
+        index = index + 1
+        x = set_money_part(row, index, 'silver', format('%02d', silver), x)
+        index = index + 1
+        x = set_money_part(row, index, 'copper', format('%02d', copper), x)
+    elseif silver > 0 then
+        index = index + 1
+        x = set_money_part(row, index, 'silver', tostring(silver), x)
+        index = index + 1
+        x = set_money_part(row, index, 'copper', format('%02d', copper), x)
+    else
+        index = index + 1
+        x = set_money_part(row, index, 'copper', format('%d', copper), x)
+    end
+
+    x = x - MONEY_PART_GAP
+
+    if suffix then
+        row.suffix:SetText(suffix)
+        row.suffix:ClearAllPoints()
+        row.suffix:SetPoint('LEFT', row, 'LEFT', x + MONEY_SUFFIX_GAP, 0)
+        row.suffix:Show()
+        x = x + MONEY_SUFFIX_GAP + row.suffix:GetStringWidth()
+    end
+
+    row:SetWidth(x)
+    return x
+end
+
+local function add_money_line(tooltip, label, value, color, suffix)
+    if value >= 10000 then
+        value = aux.round(value / 100) * 100
+    end
+
+    local r, g, b = color()
+    tooltip:AddDoubleLine(label, ' ', r, g, b, 1, 1, 1)
+
+    local line_number = tooltip:NumLines()
+    local left = getglobal(tooltip:GetName() .. 'TextLeft' .. line_number)
+    local right = getglobal(tooltip:GetName() .. 'TextRight' .. line_number)
+    local row = acquire_money_row(tooltip)
+    local width = layout_money_row(row, value, suffix)
+
+    row:ClearAllPoints()
+    row:SetPoint('RIGHT', right, 'RIGHT', 0, 0)
+    row:Show()
+
+    local state = money_state(tooltip)
+    local min_width = left:GetStringWidth() + width + 32
+    if min_width > state.min_width then
+        state.min_width = min_width
+        tooltip:SetMinimumWidth(min_width)
+    end
+end
 
 local game_tooltip_hooks, game_tooltip_money = {}, 0
 
@@ -50,6 +218,8 @@ function aux.handle.LOAD()
 end
 
 function M.extend_tooltip(tooltip, link, quantity)
+    hide_money_rows(tooltip)
+
     local item_id, suffix_id = info.parse_link(link)
     quantity = IsShiftKeyDown() and quantity or 1
     local item_info = T.temp-info.item(item_id)
@@ -65,14 +235,18 @@ function M.extend_tooltip(tooltip, link, quantity)
             end
             if settings.disenchant_value then
                 local disenchant_value = disenchant.value(item_info.slot, item_info.quality, item_info.level, item_id)
-                tooltip:AddLine('Disenchant: ' .. (disenchant_value and money.to_string2(disenchant_value) or UNKNOWN), aux.color.tooltip.disenchant.value())
+                if disenchant_value then
+                    add_money_line(tooltip, 'Disenchant:', disenchant_value, aux.color.tooltip.disenchant.value)
+                else
+                    tooltip:AddLine('Disenchant: ' .. UNKNOWN, aux.color.tooltip.disenchant.value())
+                end
             end
         end
     end
     if settings.merchant_buy then
         local _, price, limited = info.merchant_info(item_id)
         if price then
-            tooltip:AddLine('Vendor Buy ' .. (limited and '(limited): ' or ': ') .. money.to_string2(price * quantity), aux.color.tooltip.merchant())
+            add_money_line(tooltip, 'Vendor Buy ' .. (limited and '(limited):' or ':'), price * quantity, aux.color.tooltip.merchant)
         end
     end
     if settings.merchant_sell then
@@ -85,7 +259,11 @@ function M.extend_tooltip(tooltip, link, quantity)
 			price = ShaguTweaks.SellValueDB[item_id] / charges
 		end
         if price ~= 0 then
-            tooltip:AddLine('Vendor: ' .. (price and money.to_string2(price * quantity) or UNKNOWN), aux.color.tooltip.merchant())
+            if price then
+                add_money_line(tooltip, 'Vendor:', price * quantity, aux.color.tooltip.merchant)
+            else
+                tooltip:AddLine('Vendor: ' .. UNKNOWN, aux.color.tooltip.merchant())
+            end
         end
     end
     local auctionable = not item_info or info.auctionable(T.temp-info.tooltip('link', item_info.itemstring), item_info.quality)
@@ -93,16 +271,33 @@ function M.extend_tooltip(tooltip, link, quantity)
     local value = history.value(item_key)
     if auctionable then
         if settings.value then
-            tooltip:AddLine('Value: ' .. (value and money.to_string2(value * quantity) or UNKNOWN), aux.color.tooltip.value())
+            if value then
+                add_money_line(tooltip, 'Auction:', value * quantity, aux.color.tooltip.value)
+            else
+                tooltip:AddLine('Auction: ' .. UNKNOWN, aux.color.tooltip.value())
+            end
         end
-        if settings.daily  then
+        if settings.daily then
             local market_value = history.market_value(item_key)
-            tooltip:AddLine('Today: ' .. (market_value and money.to_string2(market_value * quantity) .. ' (' .. gui.percentage_historical(aux.round(market_value / value * 100)) .. ')' or UNKNOWN), aux.color.tooltip.value())
+            if market_value then
+                local percentage = '(' .. gui.percentage_historical(aux.round(market_value / value * 100)) .. ')'
+                add_money_line(tooltip, 'Today:', market_value * quantity, aux.color.tooltip.value, percentage)
+            else
+                tooltip:AddLine('Today: ' .. UNKNOWN, aux.color.tooltip.value())
+            end
         end
     end
 
     if tooltip == GameTooltip and game_tooltip_money > 0 then
         SetTooltipMoney(tooltip, game_tooltip_money)
+        local state = tooltip_money_states[tooltip]
+        if state and state.min_width > 0 then
+            local money_frame = getglobal(tooltip:GetName() .. 'MoneyFrame')
+            if money_frame and money_frame:GetWidth() > state.min_width then
+                state.min_width = money_frame:GetWidth()
+            end
+            tooltip:SetMinimumWidth(state.min_width)
+        end
     end
     tooltip:Show()
 end
