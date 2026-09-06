@@ -1,4 +1,4 @@
-# 🧩 aux — ClassicAPI
+# 🪙 aux — ClassicAPI
 
 A performance-focused fork of **aux** for **World of Warcraft 1.12.1 / Turtle WoW**.
 
